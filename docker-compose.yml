@@ -1,0 +1,90 @@
+version: '3.8'
+services:
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    ports:
+      - '3000:3000'
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    ports:
+      - '3001:3001'
+    volumes:
+      - ./backend:/app
+      - /app/node_modules
+  mcp-service:
+    build:
+      context: ./mcp-service
+      dockerfile: Dockerfile
+    ports:
+      - '5005:5000'
+    volumes:
+      - ./mcp-service:/app
+  llm-service:
+    build:
+      context: ./llm-service
+      dockerfile: Dockerfile
+    ports:
+      - "5001:5001"
+    environment:
+      - OLLAMA_HOST=ollama:11434
+    depends_on:
+      ollama:
+        condition: service_healthy
+  ollama:
+    image: ollama/ollama:latest
+    ports:
+      - "11434:11434"
+    environment:
+      - OLLAMA_HOST=0.0.0.0
+    volumes:
+      - ollama_data:/root/.ollama
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 30s
+      timeout: 30s
+      retries: 5
+      start_period: 300s  # Give more time for model download
+    entrypoint: ["/bin/sh", "-c"]
+    command: |
+      "
+      # Start Ollama in the background
+      ollama serve &
+      
+      # Wait for the server to be ready
+      while ! ollama list &>/dev/null; do
+        echo 'Waiting for Ollama to start...'
+        sleep 5
+      done
+      
+      # Pull the model if not already present
+      if ! ollama list | grep -q 'gemma:2b'; then
+        echo 'Pulling Gemma 2B model... (this may take a while)'
+        ollama pull gemma:2b
+      else
+        echo 'Gemma 2B model is already downloaded.'
+      fi
+      
+      echo 'Ollama is ready and serving the Gemma 2B model!'
+      
+      # Keep the container running
+      tail -f /dev/null
+      "
+  playwright-service:
+    build:
+      context: ./playwright-service
+      dockerfile: Dockerfile
+    volumes:
+      - ./playwright-service:/app
+      - /app/node_modules
+
+volumes:
+  ollama_data:
+    driver: local
+
